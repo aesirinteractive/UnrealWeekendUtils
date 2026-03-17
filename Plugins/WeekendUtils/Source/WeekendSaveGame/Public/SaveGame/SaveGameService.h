@@ -26,7 +26,7 @@ using FAsyncSaveGameHandle = FGuid;
 using FAsyncLoadGameHandle = FGuid;
 using FSaveLoadLockHandle = FGuid;
 
-WEEKENDSAVEGAME_API DECLARE_LOG_CATEGORY_EXTERN(LogSaveGameService, Log, All);
+WEEKENDSAVEGAME_API DECLARE_LOG_CATEGORY_EXTERN(LogSaveGameService, Verbose, All); // Default = Verbose
 
 /**
  * Central API for saving and loading SaveGames.
@@ -159,6 +159,19 @@ public:
 
 	///////////////////////////////////////////////////////////////////////////////////////
 	/// LOCKS
+
+	/** Scoped lock for saving or loading that unlocks itself on destruction. Always use static factory methods for creation. */
+	struct FScopedSaveLoadLock
+	{
+		FScopedSaveLoadLock() = default;
+		~FScopedSaveLoadLock();
+
+		static TSharedRef<FScopedSaveLoadLock> LockSaving(USaveGameService& Service, const UObject& KeyHolder, const FDebugContext& Context);
+		static TSharedRef<FScopedSaveLoadLock> LockLoading(USaveGameService& Service, const UObject& KeyHolder, const FDebugContext& Context);
+
+	private:
+		TFunction<void()> UnlockFunc = nullptr;
+	};
 
 	virtual FSaveLoadLockHandle LockAutosaving(const UObject& KeyHolder, const FDebugContext& Context = "");
 	virtual void UnlockAutosaving(const FSaveLoadLockHandle& Key, const FDebugContext& Context = "");
@@ -323,8 +336,8 @@ protected:
 	TMap<FSaveLoadLockHandle, FSaveLoadLock> ActiveSaveLocks = {};
 	TMap<FSaveLoadLockHandle, FSaveLoadLock> ActiveLoadLocks = {};
 	TOptional<FSaveLoadLockHandle> CurrentLevelSaveLock = {};
-	TOptional<FSaveLoadLockHandle> WorldTransitionSaveLockHandle = {};
-	TOptional<FSaveLoadLockHandle> WorldTransitionLoadLockHandle = {};
+	TSharedPtr<FScopedSaveLoadLock> WorldTransitionSaveLock = nullptr;
+	TSharedPtr<FScopedSaveLoadLock> WorldTransitionLoadLock = nullptr;
 
 	///////////////////////////////////////////////////////////////////////////////////////
 	/// OVERRIDES

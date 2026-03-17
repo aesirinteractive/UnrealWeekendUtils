@@ -240,11 +240,13 @@ void USaveGameService::PreloadSaveGamesAsync(const TSet<FSlotName>& SlotNames, c
 			const TSharedRef<int32>& InRemainingSlots,
 			const TSharedRef<TSet<USaveGame*>>& InResultSaveGames,
 			const TSharedRef<TSet<FSlotName>>& InResultSlotNames,
+			const TSharedRef<TSet<TStrongObjectPtr<UObject>>>& InObjectsToKeepInMemory,
 			const FOnPreloadCompleted& InCallback) :
 				ISaveLoadRequest(InService, "", SlotName),
 				RemainingSlots(InRemainingSlots),
 				ResultSaveGames(InResultSaveGames),
 				ResultSlotNames(InResultSlotNames),
+				ObjectsToKeepInMemory{InObjectsToKeepInMemory},
 				Callback(InCallback) {}
 
 		virtual void Finish(USaveGame* RequestedSaveGame, bool bSuccess) override
@@ -252,6 +254,7 @@ void USaveGameService::PreloadSaveGamesAsync(const TSet<FSlotName>& SlotNames, c
 			Runtime = FPlatformTime::Seconds() - StartTime;
 			if (bSuccess)
 			{
+				ObjectsToKeepInMemory->Add(TStrongObjectPtr{RequestedSaveGame});
 				ResultSaveGames->Add(RequestedSaveGame);
 				ResultSlotNames->Add(*SlotName);
 			}
@@ -259,18 +262,23 @@ void USaveGameService::PreloadSaveGamesAsync(const TSet<FSlotName>& SlotNames, c
 			{
 				Service.AddDebugEntry("PreloadSaveGamesAsync", "FPreloadRequest::Finish", bSuccess, Runtime);
 				Callback.ExecuteIfBound(ResultSaveGames->Array(), ResultSlotNames->Array());
+				ObjectsToKeepInMemory->Empty();
 			}
 		}
 
 		TSharedRef<int32> RemainingSlots;
 		TSharedRef<TSet<USaveGame*>> ResultSaveGames;
 		TSharedRef<TSet<FSlotName>> ResultSlotNames;
+		TSharedRef<TSet<TStrongObjectPtr<UObject>>> ObjectsToKeepInMemory;
 		FOnPreloadCompleted Callback;
 	};
 
 	TSharedRef<int32> RemainingSlots = MakeShared<int32>(0);
 	TSharedRef<TSet<USaveGame*>> ResultSaveGames = MakeShared<TSet<USaveGame*>>();
 	TSharedRef<TSet<FSlotName>> ResultSlotNames = MakeShared<TSet<FSlotName>>();
+
+	//  As long as the preload queue is working, prevent already loaded objects from being garbage collected:
+	TSharedRef<TSet<TStrongObjectPtr<UObject>>> ObjectsToKeepInMemory= MakeShared<TSet<TStrongObjectPtr<UObject>>>();
 
 	TMap<FSlotName, TSharedRef<FPreloadRequest>> Requests = {};
 	for (const FSlotName& SlotName : SlotNames)
@@ -279,7 +287,7 @@ void USaveGameService::PreloadSaveGamesAsync(const TSet<FSlotName>& SlotNames, c
 			continue;
 
 		(*RemainingSlots)++;
-		Requests.Add(SlotName, MakeShared<FPreloadRequest>(*this, SlotName, RemainingSlots, ResultSaveGames, ResultSlotNames, Callback));
+		Requests.Add(SlotName, MakeShared<FPreloadRequest>(*this, SlotName, RemainingSlots, ResultSaveGames, ResultSlotNames, ObjectsToKeepInMemory, Callback));
 	}
 
 	for (auto SlotAndRequest = Requests.CreateIterator(); SlotAndRequest; ++SlotAndRequest)
@@ -576,6 +584,9 @@ void USaveGameService::StartService()
 
 void USaveGameService::ShutdownService()
 {
+	WorldTransitionSaveLock.Reset();
+	WorldTransitionLoadLock.Reset();
+
 	SetStatus(EStatus::Uninitialized);
 	SaveGameSerializer = nullptr;
 
@@ -593,6 +604,15 @@ void USaveGameService::ShutdownService()
 
 	PendingSaveRequestsBySlot.Empty();
 	PendingLoadRequestsBySlot.Empty();
+
+	while (SaveRequestsInProgress.Num() > 0)
+	{
+		SaveRequestsInProgress.Pop()->Cancel();
+	}
+	while (LoadRequestsInProgress.Num() > 0)
+	{
+		LoadRequestsInProgress.Pop()->Cancel();
+	}
 
 	FWorldDelegates::OnPostWorldInitialization.RemoveAll(this);
 }
@@ -827,14 +847,9 @@ void USaveGameService::CreateWorldTransitionSaveLoadLocks()
 		if (!IsValid(this))
 			return;
 
-		if (WorldTransitionSaveLockHandle.IsSet())
-		{
-			UnlockSaving(*WorldTransitionSaveLockHandle, "USaveGameService - World Transition (done)");
-		}
-		if (WorldTransitionLoadLockHandle.IsSet())
-		{
-			UnlockLoading(*WorldTransitionLoadLockHandle, "USaveGameService - World Transition (done)");
-		}
+		// This will unlock save/load again:
+		WorldTransitionSaveLock.Reset();
+		WorldTransitionLoadLock.Reset();
 
 		World->OnWorldBeginPlay.RemoveAll(this);
 	};
@@ -844,8 +859,9 @@ void USaveGameService::CreateWorldTransitionSaveLoadLocks()
 		[this](UWorld* World)
 		{
 			World->OnWorldBeginPlay.RemoveAll(this);
-			WorldTransitionSaveLockHandle = LockSaving(*this, "USaveGameService - World Transition (teardown)");
-			WorldTransitionLoadLockHandle = LockLoading(*this, "USaveGameService - World Transition (teardown)");
+
+			WorldTransitionSaveLock = FScopedSaveLoadLock::LockSaving(*this, *this, "USaveGameService - World Transition (teardown)");
+			WorldTransitionLoadLock = FScopedSaveLoadLock::LockLoading(*this, *this, "USaveGameService - World Transition (teardown)");
 		});
 
 	// Unlock save/load when a new world has begun play:
@@ -865,8 +881,8 @@ void USaveGameService::CreateWorldTransitionSaveLoadLocks()
 	// Lock initially, if existing world has not yet begun play:
 	if (!World || !World->HasBegunPlay())
 	{
-		WorldTransitionSaveLockHandle = LockSaving(*this, "USaveGameService - World Transition (init)");
-		WorldTransitionLoadLockHandle = LockLoading(*this, "USaveGameService - World Transition (init)");
+		WorldTransitionSaveLock = FScopedSaveLoadLock::LockSaving(*this, *this, "USaveGameService - World Transition (init)");
+		WorldTransitionLoadLock = FScopedSaveLoadLock::LockLoading(*this, *this, "USaveGameService - World Transition (init)");
 	}
 
 	// Unlock when existing world has begun play:
@@ -881,7 +897,7 @@ void USaveGameService::SetStatus(const EStatus& NewStatus)
 	if (CurrentStatus == NewStatus)
 		return;
 
-	UE_LOG(LogSaveGameService, Verbose, TEXT("%s changed status: %s -> %s"), *GetName(), *LexToString(CurrentStatus), *LexToString(NewStatus));
+	UE_LOG(LogSaveGameService, VeryVerbose, TEXT("%s changed status: %s -> %s"), *GetName(), *LexToString(CurrentStatus), *LexToString(NewStatus));
 	CurrentStatus = NewStatus;
 	OnStatusChanged.Broadcast(NewStatus);
 }
@@ -889,6 +905,8 @@ void USaveGameService::SetStatus(const EStatus& NewStatus)
 void USaveGameService::AddDebugEntry(const FString& Entry)
 {
 	DebugHistory.Add(FString::Printf(TEXT("(%s UTC)\t %s"), *FDateTime::UtcNow().ToString(), *Entry));
+	UE_LOG(LogSaveGameService, Verbose, TEXT("%s"), *Entry);
+
 	while (DebugHistory.Num() >= DebugHistoryEntriesToKeep)
 	{
 		// Shrink head-first to fit desired size:
@@ -996,6 +1014,48 @@ void USaveGameService::FSaveCurrentSaveGameRequest::Finish(USaveGame* RequestedS
 	Runtime = FPlatformTime::Seconds() - StartTime;
 	Service.AddDebugEntry("SaveCurrentSaveGameRequest", Context, bSuccess, Runtime);
 	ISaveLoadRequest::Finish(RequestedSaveGame, bSuccess);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////
+/// SCOPED SAVE/LOAD LOCKS
+
+TSharedRef<USaveGameService::FScopedSaveLoadLock> USaveGameService::FScopedSaveLoadLock::LockSaving(USaveGameService& Service, const UObject& KeyHolder, const FDebugContext& Context)
+{
+	TSharedRef<FScopedSaveLoadLock> ScopedLock = MakeShared<FScopedSaveLoadLock>();
+	FSaveLoadLockHandle ActualHandle = Service.LockSaving(KeyHolder, "[Lock] " + Context);
+	ScopedLock->UnlockFunc = [Service = MakeWeakObjectPtr(&Service), ActualHandle, Context = CopyTemp(Context)]()
+	{
+		if (Service.IsValid() && ActualHandle.IsValid())
+		{
+			Service->UnlockSaving(ActualHandle, "[Unlock] " + Context);
+		}
+	};
+
+	return ScopedLock;
+}
+
+TSharedRef<USaveGameService::FScopedSaveLoadLock> USaveGameService::FScopedSaveLoadLock::LockLoading(USaveGameService& Service, const UObject& KeyHolder, const FDebugContext& Context)
+{
+	TSharedRef<FScopedSaveLoadLock> ScopedLock = MakeShared<FScopedSaveLoadLock>();
+	FSaveLoadLockHandle ActualHandle = Service.LockLoading(KeyHolder, "[Lock] " + Context);
+	ScopedLock->UnlockFunc = [Service = MakeWeakObjectPtr(&Service), ActualHandle, Context = CopyTemp(Context)]()
+	{
+		if (Service.IsValid() && ActualHandle.IsValid())
+		{
+			Service->UnlockLoading(ActualHandle, "[Unlock] " + Context);
+		}
+	};
+
+	return ScopedLock;
+}
+
+USaveGameService::FScopedSaveLoadLock::~FScopedSaveLoadLock()
+{
+	if (UnlockFunc.IsSet())
+	{
+		UnlockFunc();
+		UnlockFunc.Reset();
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
