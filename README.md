@@ -1,8 +1,20 @@
 ## WeekendUtils
 
-**Relevant documentation can be found here:**
-- [Game Service Framework](https://github.com/barzb/WeekendUtils/wiki/Game-Service-Framework)
-- [Save Game Framework](https://github.com/barzb/WeekendUtils/wiki/Save-Game-Framework)
+Unreal Engine 5 plugin collecting reusable gameplay-framework modules: a game service framework (dependency-driven, mockable singleton services), a save game framework (modular, data-driven save games), a cheat menu, and shared utility code.
+
+**Modules:**
+- `WeekendUtils` - shared utility code
+- `WeekendGameService` - game service framework
+- `WeekendSaveGame` - save game framework
+- `WeekendCheatMenu` - in-game cheat menu
+- `WeekendUtilsTests` - automation test specs / usage examples
+
+**Documentation:**
+- [WeekendUtils](_Docs/Utils.md)
+- [Game Service Framework](_Docs/GameServiceFramework.md)
+- [Save Game Framework](_Docs/SaveGameFramework.md)
+- [Cheat Menu](_Docs/CheatMenu.md)
+- [WeekendUtilsTests](_Docs/UtilsTests.md)
 
 ### **Update notes: 05/08/2026**
 **Breaking Changes to the GameService framework!**
