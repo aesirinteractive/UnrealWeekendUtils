@@ -17,7 +17,7 @@
  * Base class for polymorphic SaveGame modules of the @UModularSaveGame.
  * Subclasses should override the @ModuleName in their constructor.
  */
-UCLASS(Abstract, EditInlineNew, CollapseCategories)
+UCLASS(BlueprintType, Abstract, EditInlineNew, CollapseCategories)
 class WEEKENDSAVEGAME_API USaveGameModule : public UObject
 {
 	GENERATED_BODY()
@@ -32,7 +32,7 @@ public:
 	FOnAfterModuleRestored OnAfterModuleRestored;
 
 	/** Default identifier that must be unique across all modules and is used when a module is not registered by custom name. */
-	UPROPERTY(SaveGame, VisibleAnywhere, Category = "Weekend Utils|Save Game")
+	UPROPERTY(SaveGame, VisibleAnywhere, BlueprintReadWrite, Category = "Weekend Utils|Save Game")
 	FName DefaultModuleName = NAME_None;
 
 	/** Module version for potential compatibility checks. */
@@ -41,7 +41,13 @@ public:
 
 	// - UObject
 	virtual void Serialize(FArchive& Ar) override;
+	virtual void PostInitProperties() override;
 	// --
+
+#if WITH_EDITOR
+	/** Analyzes the composition of this module and reports it to the given MessageLog. */
+	virtual void AnalyzeAndReportModuleComposition(class FMessageLog& MessageLog) const {}
+#endif
 
 protected:
 	/** Called before the module is being saved, before all SaveGame specified properties have been serialized. */
@@ -65,5 +71,15 @@ inline void USaveGameModule::Serialize(FArchive& Ar)
 	if (Ar.ArIsSaveGame && Ar.IsLoading())
 	{
 		PostRestoreModule();
+	}
+}
+
+inline void USaveGameModule::PostInitProperties()
+{
+	Super::PostInitProperties();
+
+	if (DefaultModuleName.IsNone())
+	{
+		DefaultModuleName = FName(GetClass()->GetName());
 	}
 }

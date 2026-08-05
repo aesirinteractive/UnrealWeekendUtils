@@ -16,6 +16,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Misc/ConfigCacheIni.h"
 #include "Modules/ModuleManager.h"
+#include "SaveGame/ModularSaveGame.h"
 #include "SaveGame/SaveGamePreset.h"
 #include "SaveGame/Settings/SaveGameServiceSettings.h"
 
@@ -189,4 +190,32 @@ TArray<FSoftClassPath> USaveGameUtils::GetAllAvailableSaveLoadBehaviorClasses()
 	TArray<UClass*> ChildClasses;
 	GetDerivedClasses(USaveLoadBehavior::StaticClass(), OUT ChildClasses);
 	return TArray<FSoftClassPath>{ChildClasses};
+}
+
+int64 USaveGameUtils::CalculateObjectSizeForSaveGame(const UObject& Object, EUnit DesiredUnit)
+{
+	static const TArray AllowedUnits{EUnit::Bytes, EUnit::Kilobytes, EUnit::Megabytes, EUnit::Gigabytes, EUnit::Terabytes};
+	if (!ensureAlways(AllowedUnits.Contains(DesiredUnit)))
+		return 0.0;
+
+	// Serialize() is non-const but since we're just serializing TO an archive,
+	// it doesn't change the object's state so it's acceptable to const_cast:
+	UObject* MutableObject = const_cast<UObject*>(&Object);
+
+	TArray<uint8> SerializedData;
+	FMemoryWriter MemoryWriter(OUT SerializedData, true);
+	if (UModularSaveGame* SaveGameObject = Cast<UModularSaveGame>(MutableObject); IsValid(SaveGameObject))
+	{
+		// This will also count the modules into the total size of a ModularSaveGame object:
+		FWeekendUtilsSubobjectProxyArchive Ar(MemoryWriter, *SaveGameObject);
+		SaveGameObject->Serialize(Ar);
+	}
+	else
+	{
+		FObjectAndNameAsStringProxyArchive Ar(MemoryWriter, true);
+		MutableObject->Serialize(Ar);
+	}
+
+	const int64 SizeInBytes = SerializedData.Num();
+	return FUnitConversion::Convert(SizeInBytes, EUnit::Bytes, DesiredUnit);
 }

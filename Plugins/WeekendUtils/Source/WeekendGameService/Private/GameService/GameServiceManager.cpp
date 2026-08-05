@@ -164,7 +164,9 @@ UGameServiceBase& UGameServiceManager::StartService(UWorld& TargetWorld, const F
 	if (WasServiceStarted(ServiceClass))
 	{
 		UGameServiceBase* RunningInstance = StartedServices[ServiceClass].Get();
-		ensure(RunningInstance == &ServiceInstance);
+		UE_CLOG(RunningInstance != &ServiceInstance, LogGameService, Warning,
+			TEXT("StartService: [%s] was already started with a different instance (%s). Ignoring new instance (%s)."),
+			*ServiceClass->GetName(), *GetNameSafe(RunningInstance), *ServiceInstance.GetName());
 		UE_LOG(LogGameService, Verbose, TEXT("Game service already running: [%s] %s"), *ServiceClass->GetName(), *ServiceInstance.GetName());
 		return *RunningInstance;
 	}

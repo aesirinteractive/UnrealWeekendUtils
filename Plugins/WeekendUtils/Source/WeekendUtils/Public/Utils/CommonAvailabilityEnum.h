@@ -11,6 +11,7 @@
 
 #include "CoreMinimal.h"
 #include "EnumUtils.h"
+#include "CommonAvailabilityEnum.generated.h"
 
 ///////////////////////////////////////////////////////////////////////////////////////
 /// UFUNCTION(BlueprintCallable, BlueprintPure = False, ExpandEnumAsExecs = "ReturnValue")

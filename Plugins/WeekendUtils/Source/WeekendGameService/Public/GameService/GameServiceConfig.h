@@ -19,7 +19,7 @@
 /**
  * Configuration container for the @UGameServiceManager.
  */
-UCLASS(CollapseCategories, NotBlueprintable, NotBlueprintType)
+UCLASS(CollapseCategories, NotBlueprintable)
 class WEEKENDGAMESERVICE_API UGameServiceConfig : public UObject
 {
 	GENERATED_BODY()

@@ -44,9 +44,9 @@ public class WeekendSaveGame : ModuleRules
 				new string[]
 				{
 					"AssetTools",
-					"ApplicationCore",
 					"Blutility",
 					"DesktopPlatform",
+					"LevelEditor",
 					"UnrealEd",
 				}
 			);

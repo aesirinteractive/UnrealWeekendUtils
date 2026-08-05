@@ -42,31 +42,31 @@ FAsyncSaveGameHandle USaveGameService::RequestAutosave(const FDebugContext& Cont
 
 FAsyncSaveGameHandle USaveGameService::RequestSaveCurrentSaveGameToSlot(const FDebugContext& Context, const FSlotName& SlotName)
 {
-	AddDebugEntry("RequestSaveCurrentSaveGameToSlot", Context);
+	AddDebugEntry("RequestSaveCurrentSaveGameToSlot", Context + "(for " + SlotName + ")");
 	return EnqueueSaveRequest(SlotName, MakeShared<FSaveCurrentSaveGameRequest>(*this, Context));
 }
 
 FAsyncSaveGameHandle USaveGameService::RequestSaveCurrentSaveGameToSlot(const FDebugContext& Context, const FSlotName& SlotName, const FOnSaveLoadCompleted& Callback)
 {
-	AddDebugEntry("RequestSaveCurrentSaveGameToSlot", Context);
+	AddDebugEntry("RequestSaveCurrentSaveGameToSlot", Context + "(for " + SlotName + ")");
 	return EnqueueSaveRequest(SlotName, MakeShared<FSaveCurrentSaveGameRequest>(*this, Context, Callback));
 }
 
 FAsyncLoadGameHandle USaveGameService::RequestLoadCurrentSaveGameFromSlot(const FDebugContext& Context, const FSlotName& SlotName)
 {
-	AddDebugEntry("RequestLoadCurrentSaveGameFromSlot", Context);
+	AddDebugEntry("RequestLoadCurrentSaveGameFromSlot", Context + "(for " + SlotName + ")");
 	return EnqueueLoadRequest(SlotName, MakeShared<FLoadToCurrentSaveGameRequest>(*this, Context, SlotName));
 }
 
 FAsyncLoadGameHandle USaveGameService::RequestLoadCurrentSaveGameFromSlot(const FDebugContext& Context, const FSlotName& SlotName, const FOnSaveLoadCompleted& Callback)
 {
-	AddDebugEntry("RequestLoadCurrentSaveGameFromSlot", Context);
+	AddDebugEntry("RequestLoadCurrentSaveGameFromSlot", Context + "(for " + SlotName + ")");
 	return EnqueueLoadRequest(SlotName, MakeShared<FLoadToCurrentSaveGameRequest>(*this, Context, Callback, SlotName));
 }
 
 FAsyncLoadGameHandle USaveGameService::RequestLoadAndTravelIntoCurrentSaveGameFromSlot(const FDebugContext& Context, const FSlotName& SlotName)
 {
-	AddDebugEntry("RequestLoadAndTravelIntoCurrentSaveGameFromSlot", Context);
+	AddDebugEntry("RequestLoadAndTravelIntoCurrentSaveGameFromSlot", Context + "(for " + SlotName + ")");
 	return EnqueueLoadRequest(SlotName, MakeShared<FLoadAndTravelIntoToCurrentSaveGameRequest>(*this, Context, SlotName));
 }
 
@@ -240,11 +240,13 @@ void USaveGameService::PreloadSaveGamesAsync(const TSet<FSlotName>& SlotNames, c
 			const TSharedRef<int32>& InRemainingSlots,
 			const TSharedRef<TSet<USaveGame*>>& InResultSaveGames,
 			const TSharedRef<TSet<FSlotName>>& InResultSlotNames,
+			const TSharedRef<TSet<TStrongObjectPtr<UObject>>>& InObjectsToKeepInMemory,
 			const FOnPreloadCompleted& InCallback) :
 				ISaveLoadRequest(InService, "", SlotName),
 				RemainingSlots(InRemainingSlots),
 				ResultSaveGames(InResultSaveGames),
 				ResultSlotNames(InResultSlotNames),
+				ObjectsToKeepInMemory{InObjectsToKeepInMemory},
 				Callback(InCallback) {}
 
 		virtual void Finish(USaveGame* RequestedSaveGame, bool bSuccess) override
@@ -252,6 +254,7 @@ void USaveGameService::PreloadSaveGamesAsync(const TSet<FSlotName>& SlotNames, c
 			Runtime = FPlatformTime::Seconds() - StartTime;
 			if (bSuccess)
 			{
+				ObjectsToKeepInMemory->Add(TStrongObjectPtr{RequestedSaveGame});
 				ResultSaveGames->Add(RequestedSaveGame);
 				ResultSlotNames->Add(*SlotName);
 			}
@@ -259,18 +262,23 @@ void USaveGameService::PreloadSaveGamesAsync(const TSet<FSlotName>& SlotNames, c
 			{
 				Service.AddDebugEntry("PreloadSaveGamesAsync", "FPreloadRequest::Finish", bSuccess, Runtime);
 				Callback.ExecuteIfBound(ResultSaveGames->Array(), ResultSlotNames->Array());
+				ObjectsToKeepInMemory->Empty();
 			}
 		}
 
 		TSharedRef<int32> RemainingSlots;
 		TSharedRef<TSet<USaveGame*>> ResultSaveGames;
 		TSharedRef<TSet<FSlotName>> ResultSlotNames;
+		TSharedRef<TSet<TStrongObjectPtr<UObject>>> ObjectsToKeepInMemory;
 		FOnPreloadCompleted Callback;
 	};
 
 	TSharedRef<int32> RemainingSlots = MakeShared<int32>(0);
 	TSharedRef<TSet<USaveGame*>> ResultSaveGames = MakeShared<TSet<USaveGame*>>();
 	TSharedRef<TSet<FSlotName>> ResultSlotNames = MakeShared<TSet<FSlotName>>();
+
+	//  As long as the preload queue is working, prevent already loaded objects from being garbage collected:
+	TSharedRef<TSet<TStrongObjectPtr<UObject>>> ObjectsToKeepInMemory = MakeShared<TSet<TStrongObjectPtr<UObject>>>();
 
 	TMap<FSlotName, TSharedRef<FPreloadRequest>> Requests = {};
 	for (const FSlotName& SlotName : SlotNames)
@@ -279,7 +287,7 @@ void USaveGameService::PreloadSaveGamesAsync(const TSet<FSlotName>& SlotNames, c
 			continue;
 
 		(*RemainingSlots)++;
-		Requests.Add(SlotName, MakeShared<FPreloadRequest>(*this, SlotName, RemainingSlots, ResultSaveGames, ResultSlotNames, Callback));
+		Requests.Add(SlotName, MakeShared<FPreloadRequest>(*this, SlotName, RemainingSlots, ResultSaveGames, ResultSlotNames, ObjectsToKeepInMemory, Callback));
 	}
 
 	for (auto SlotAndRequest = Requests.CreateIterator(); SlotAndRequest; ++SlotAndRequest)
@@ -293,7 +301,7 @@ void USaveGameService::RestoreAsCurrentSaveGame(USaveGame& SaveGame, TOptional<F
 {
 	checkf(!IsCachedSaveGameSnapshot(SaveGame), TEXT("Restoring cached SaveGame snapshots is now allowed. Use runtime versions or restore by slot"));
 
-	AddDebugEntry("[RestoreAsCurrentSaveGame]");
+	AddDebugEntry("[RestoreAsCurrentSaveGame] " + SaveGame.GetName() + " from slot: " + LoadedFromSlotName.Get("<Unknown>"));
 	SetCurrentSaveGame(FCurrentSaveGame::CreateFromLoadedGame(SaveGame, LoadedFromSlotName));
 	OnAfterRestored.Broadcast(CurrentSaveGame);
 }
@@ -338,13 +346,13 @@ void USaveGameService::DeleteSaveGameAtSlot(const FSlotName& SlotName, bool bMov
 {
 	if (!CachedSaveGames.Contains(SlotName))
 		return;
- 
+
 	if (DoesSaveFileExist(SlotName))
 	{
 		SaveGameSerializer->TryDeleteGameInSlot(SlotName, GetCurrentUserIndex(),
 			bMoveToBackupFolder ? FString("Backup_" + FDateTime::Now().ToString()) : TOptional<FString>{});
 	}
- 
+
 	CachedSaveGames.Remove(SlotName);
 	OnAvailableSaveGamesChanged.Broadcast();
 }
@@ -483,6 +491,12 @@ bool USaveGameService::IsBusySavingOrLoading() const
 	return (IsBusyLoading() || IsBusySaving());
 }
 
+bool USaveGameService::CanContinueCurrentSaveGame() const
+{
+	check(SaveLoadBehavior);
+	return SaveLoadBehavior->CanContinueCurrentSaveGame(CurrentSaveGame);
+}
+
 void USaveGameService::SetCurrentSaveGame(const FCurrentSaveGame& NewCurrentSaveGame)
 {
 	OnBeforeCurrentSaveGameChanged.Broadcast(CurrentSaveGame);
@@ -576,6 +590,9 @@ void USaveGameService::StartService()
 
 void USaveGameService::ShutdownService()
 {
+	WorldTransitionSaveLock.Reset();
+	WorldTransitionLoadLock.Reset();
+
 	SetStatus(EStatus::Uninitialized);
 	SaveGameSerializer = nullptr;
 
@@ -593,6 +610,15 @@ void USaveGameService::ShutdownService()
 
 	PendingSaveRequestsBySlot.Empty();
 	PendingLoadRequestsBySlot.Empty();
+
+	while (SaveRequestsInProgress.Num() > 0)
+	{
+		SaveRequestsInProgress.Pop()->Cancel();
+	}
+	while (LoadRequestsInProgress.Num() > 0)
+	{
+		LoadRequestsInProgress.Pop()->Cancel();
+	}
 
 	FWorldDelegates::OnPostWorldInitialization.RemoveAll(this);
 }
@@ -654,7 +680,7 @@ void USaveGameService::ConsumeLoadRequestsInProgress(USaveGame* LoadedSaveGame, 
 
 USaveGameService::FSlotName USaveGameService::GetAutosaveSlotName() const
 {
-	ensure(SaveLoadBehavior);
+	check(SaveLoadBehavior);
 	return (SaveLoadBehavior ? SaveLoadBehavior->GetAutosaveSlotName(GetCurrentSaveGame()) : FSlotName());
 }
 
@@ -709,6 +735,11 @@ TSet<USaveGameService::FSlotName> USaveGameService::GetSlotNamesAllowedForLoadin
 	}
 
 	return Result;
+}
+
+void USaveGameService::AddDebugEntry(const UObject& Owner, const FString& Entry)
+{
+	AddDebugEntry(FString::Printf(TEXT("[%s] %s"), *Owner.GetPathName(Owner.GetWorld()), *Entry));
 }
 
 void USaveGameService::PerformAsyncSave(const FSlotName& SlotName)
@@ -793,7 +824,7 @@ void USaveGameService::HandleLevelChanged(UWorld* NewWorld)
 	// don't update save locks for e.g. editor preview worlds such as the thumbnail renderer worlds
 	if (NewWorld->WorldType != EWorldType::Game && NewWorld->WorldType != EWorldType::PIE)
 		return;
-	
+
 	UpdateSaveLockForLevel(NewWorld);
 
 	SaveLoadBehavior->HandleLevelChanged(*this, NewWorld);
@@ -808,7 +839,7 @@ void USaveGameService::UpdateSaveLockForLevel(UWorld* NewWorld)
 
 	if (bIsSavingAllowed)
 	{
-		UnlockSaving(*CurrentLevelSaveLock);
+		UnlockSaving(*CurrentLevelSaveLock, "UpdateSaveLockForLevel: " + NewWorld->GetName());
 		CurrentLevelSaveLock.Reset();
 	}
 	else
@@ -827,14 +858,9 @@ void USaveGameService::CreateWorldTransitionSaveLoadLocks()
 		if (!IsValid(this))
 			return;
 
-		if (WorldTransitionSaveLockHandle.IsSet())
-		{
-			UnlockSaving(*WorldTransitionSaveLockHandle, "USaveGameService - World Transition (done)");
-		}
-		if (WorldTransitionLoadLockHandle.IsSet())
-		{
-			UnlockLoading(*WorldTransitionLoadLockHandle, "USaveGameService - World Transition (done)");
-		}
+		// This will unlock save/load again:
+		WorldTransitionSaveLock.Reset();
+		WorldTransitionLoadLock.Reset();
 
 		World->OnWorldBeginPlay.RemoveAll(this);
 	};
@@ -844,8 +870,9 @@ void USaveGameService::CreateWorldTransitionSaveLoadLocks()
 		[this](UWorld* World)
 		{
 			World->OnWorldBeginPlay.RemoveAll(this);
-			WorldTransitionSaveLockHandle = LockSaving(*this, "USaveGameService - World Transition (teardown)");
-			WorldTransitionLoadLockHandle = LockLoading(*this, "USaveGameService - World Transition (teardown)");
+
+			WorldTransitionSaveLock = FScopedSaveLoadLock::LockSaving(*this, *this, "USaveGameService - World Transition (teardown)");
+			WorldTransitionLoadLock = FScopedSaveLoadLock::LockLoading(*this, *this, "USaveGameService - World Transition (teardown)");
 		});
 
 	// Unlock save/load when a new world has begun play:
@@ -865,8 +892,8 @@ void USaveGameService::CreateWorldTransitionSaveLoadLocks()
 	// Lock initially, if existing world has not yet begun play:
 	if (!World || !World->HasBegunPlay())
 	{
-		WorldTransitionSaveLockHandle = LockSaving(*this, "USaveGameService - World Transition (init)");
-		WorldTransitionLoadLockHandle = LockLoading(*this, "USaveGameService - World Transition (init)");
+		WorldTransitionSaveLock = FScopedSaveLoadLock::LockSaving(*this, *this, "USaveGameService - World Transition (init)");
+		WorldTransitionLoadLock = FScopedSaveLoadLock::LockLoading(*this, *this, "USaveGameService - World Transition (init)");
 	}
 
 	// Unlock when existing world has begun play:
@@ -881,7 +908,7 @@ void USaveGameService::SetStatus(const EStatus& NewStatus)
 	if (CurrentStatus == NewStatus)
 		return;
 
-	UE_LOG(LogSaveGameService, Verbose, TEXT("%s changed status: %s -> %s"), *GetName(), *LexToString(CurrentStatus), *LexToString(NewStatus));
+	UE_LOG(LogSaveGameService, VeryVerbose, TEXT("%s changed status: %s -> %s"), *GetName(), *LexToString(CurrentStatus), *LexToString(NewStatus));
 	CurrentStatus = NewStatus;
 	OnStatusChanged.Broadcast(NewStatus);
 }
@@ -889,6 +916,8 @@ void USaveGameService::SetStatus(const EStatus& NewStatus)
 void USaveGameService::AddDebugEntry(const FString& Entry)
 {
 	DebugHistory.Add(FString::Printf(TEXT("(%s UTC)\t %s"), *FDateTime::UtcNow().ToString(), *Entry));
+	UE_LOG(LogSaveGameService, Verbose, TEXT("%s"), *Entry);
+
 	while (DebugHistory.Num() >= DebugHistoryEntriesToKeep)
 	{
 		// Shrink head-first to fit desired size:
@@ -903,7 +932,7 @@ void USaveGameService::AddDebugEntry(const FString& Operation, const FDebugConte
 
 void USaveGameService::AddDebugEntry(const FString& Operation, const FDebugContext& Context, bool bSuccess, double ExecTime)
 {
-	AddDebugEntry(FString::Printf(TEXT("[%s] %s (took %.3fsec): %s"), *Operation, (bSuccess ? TEXT("succeeded") : TEXT("failed")), ExecTime, *Context));
+	AddDebugEntry(FString::Printf(TEXT("[%s] %s (took %.3f sec): %s"), *Operation, (bSuccess ? TEXT("succeeded") : TEXT("failed")), ExecTime, *Context));
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -950,7 +979,7 @@ TMap<USaveGameService::FSlotName, const USaveGame*> USaveGameService::FSaveGames
 {
 	TMap<FSlotName, const USaveGame*> Result;
 	Algo::Transform(SnapshotsBySlot, OUT Result,
-		[](const TPair<FSlotName, TStrongObjectPtr<const USaveGame>>& Itr){ return TPair<FSlotName, const USaveGame*>(Itr.Key, Itr.Value.Get()); });
+		[](const TPair<FSlotName, TStrongObjectPtr<const USaveGame>>& Itr) { return TPair<FSlotName, const USaveGame*>(Itr.Key, Itr.Value.Get()); });
 	return Result;
 }
 
@@ -996,6 +1025,46 @@ void USaveGameService::FSaveCurrentSaveGameRequest::Finish(USaveGame* RequestedS
 	Runtime = FPlatformTime::Seconds() - StartTime;
 	Service.AddDebugEntry("SaveCurrentSaveGameRequest", Context, bSuccess, Runtime);
 	ISaveLoadRequest::Finish(RequestedSaveGame, bSuccess);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////
+/// SCOPED SAVE/LOAD LOCKS
+
+TSharedRef<USaveGameService::FScopedSaveLoadLock> USaveGameService::FScopedSaveLoadLock::LockSaving(USaveGameService& Service, const UObject& KeyHolder, const FDebugContext& Context)
+{
+	TSharedRef<FScopedSaveLoadLock> ScopedLock = MakeShared<FScopedSaveLoadLock>();
+	FSaveLoadLockHandle ActualHandle = Service.LockSaving(KeyHolder, "[Lock] " + Context);
+	ScopedLock->UnlockFunc = [Service = MakeWeakObjectPtr(&Service), ActualHandle, Context = CopyTemp(Context)]()
+	{
+		if (Service.IsValid() && ActualHandle.IsValid())
+		{
+			Service->UnlockSaving(ActualHandle, "[Unlock] " + Context);
+		}
+	};
+	return ScopedLock;
+}
+
+TSharedRef<USaveGameService::FScopedSaveLoadLock> USaveGameService::FScopedSaveLoadLock::LockLoading(USaveGameService& Service, const UObject& KeyHolder, const FDebugContext& Context)
+{
+	TSharedRef<FScopedSaveLoadLock> ScopedLock = MakeShared<FScopedSaveLoadLock>();
+	FSaveLoadLockHandle ActualHandle = Service.LockLoading(KeyHolder, "[Lock] " + Context);
+	ScopedLock->UnlockFunc = [Service = MakeWeakObjectPtr(&Service), ActualHandle, Context = CopyTemp(Context)]()
+	{
+		if (Service.IsValid() && ActualHandle.IsValid())
+		{
+			Service->UnlockLoading(ActualHandle, "[Unlock] " + Context);
+		}
+	};
+	return ScopedLock;
+}
+
+USaveGameService::FScopedSaveLoadLock::~FScopedSaveLoadLock()
+{
+	if (UnlockFunc.IsSet())
+	{
+		UnlockFunc();
+		UnlockFunc.Reset();
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
