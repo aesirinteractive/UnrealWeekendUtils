@@ -13,8 +13,74 @@
 #include "GameService/GameServiceConfig.h"
 #include "GameService/AsyncGameServiceBase.h"
 
+namespace
+{
+	// Global internal registry and life-time management of GameServiceManager instances bound to game instances:
+	struct FGameServiceManagerRegistry : private TArray<TStrongObjectPtr<UGameServiceManager>>
+	{
+		void CreateForGameInstance(UGameInstance* OuterGameInstance)
+		{
+			UGameServiceManager* GameServiceManager = NewObject<UGameServiceManager>(OuterGameInstance);
+			Add(TStrongObjectPtr(GameServiceManager));
+		}
+
+		void RemoveForGameInstance(const UGameInstance* OuterGameInstance)
+		{
+			RemoveAll([OuterGameInstance](const TStrongObjectPtr<UGameServiceManager>& Instance)
+			{
+				return Instance->GetTypedOuter<UGameInstance>() == OuterGameInstance;
+			});
+		}
+
+		bool ExistsForGameInstance(const UGameInstance* OuterGameInstance) const
+		{
+			return ContainsByPredicate([OuterGameInstance](const TStrongObjectPtr<UGameServiceManager>& Instance)
+			{
+				return Instance->GetTypedOuter<UGameInstance>() == OuterGameInstance;
+			});
+		}
+
+		UGameServiceManager* FindForGameInstance(const UGameInstance* OuterGameInstance) const
+		{
+			const auto* FoundEntry = FindByPredicate([OuterGameInstance](const TStrongObjectPtr<UGameServiceManager>& Instance)
+			{
+				return Instance->GetTypedOuter<UGameInstance>() == OuterGameInstance;
+			});
+			return FoundEntry ? FoundEntry->Get() : nullptr;
+		}
+	}
+	GGameServiceManagers = {};
+}
+
+UGameServiceManager& UGameServiceManager::SummonInstance(const UObject* WorldContextObject)
+{
+	check(WorldContextObject);
+	const UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
+	check(World);
+	UGameInstance* GameInstance = World->GetGameInstance();
+	check(GameInstance);
+	if (!GGameServiceManagers.ExistsForGameInstance(GameInstance))
+	{
+		GGameServiceManagers.CreateForGameInstance(GameInstance);
+	}
+	return *GGameServiceManagers.FindForGameInstance(GameInstance);
+}
+
+UGameServiceManager* UGameServiceManager::FindInstance(const UObject* WorldContextObject)
+{
+	check(WorldContextObject && !WorldContextObject->HasAnyFlags(RF_ClassDefaultObject));
+	const UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
+	check(World);
+	const UGameInstance* GameInstance = World->GetGameInstance();
+	if (!GGameServiceManagers.ExistsForGameInstance(GameInstance))
+		return nullptr;
+
+	return GGameServiceManagers.FindForGameInstance(GameInstance);
+}
+
 UGameServiceManager::UGameServiceManager()
 {
+	ServiceClassRegisters.Reserve(2);
 	ServiceClassRegisters.Add(EGameServiceLifetime::ShutdownWithGameInstance);
 	ServiceClassRegisters.Add(EGameServiceLifetime::ShutdownWithWorld);
 }
@@ -98,7 +164,9 @@ UGameServiceBase& UGameServiceManager::StartService(UWorld& TargetWorld, const F
 	if (WasServiceStarted(ServiceClass))
 	{
 		UGameServiceBase* RunningInstance = StartedServices[ServiceClass].Get();
-		ensure(RunningInstance == &ServiceInstance);
+		UE_CLOG(RunningInstance != &ServiceInstance, LogGameService, Warning,
+			TEXT("StartService: [%s] was already started with a different instance (%s). Ignoring new instance (%s)."),
+			*ServiceClass->GetName(), *GetNameSafe(RunningInstance), *ServiceInstance.GetName());
 		UE_LOG(LogGameService, Verbose, TEXT("Game service already running: [%s] %s"), *ServiceClass->GetName(), *ServiceInstance.GetName());
 		return *RunningInstance;
 	}
@@ -371,6 +439,17 @@ void UGameServiceManager::ClearServiceRegister(const EGameServiceLifetime& Lifet
 {
 	ServiceClassRegisters.FindOrAdd(Lifetime).Empty();
 	UE_LOG(LogGameService, Log, TEXT("Service register for %s was cleared."), *LexToString(Lifetime));
+}
+
+void UGameServiceManager::Terminate()
+{
+	ShutdownAllServices();
+
+	ClearServiceRegister(EGameServiceLifetime::ShutdownWithWorld);
+	ClearServiceRegister(EGameServiceLifetime::ShutdownWithGameInstance);
+
+	const UGameInstance* OwningGameInstance = GetTypedOuter<UGameInstance>();
+	GGameServiceManagers.RemoveForGameInstance(OwningGameInstance);
 }
 
 UGameServiceBase* UGameServiceManager::CreateServiceInstance(UObject& Owner, const FGameServiceClass& ServiceInstanceClass, const UGameServiceBase* TemplateInstance)

@@ -19,7 +19,7 @@
 /**
  * Configuration container for the @UGameServiceManager.
  */
-UCLASS(CollapseCategories, NotBlueprintable, NotBlueprintType)
+UCLASS(CollapseCategories, NotBlueprintable)
 class WEEKENDGAMESERVICE_API UGameServiceConfig : public UObject
 {
 	GENERATED_BODY()
@@ -40,7 +40,7 @@ public:
 	 *    Config.AddService<IAnotherServiceInterface, UAnotherServiceImpl>();
 	 * });
 	 */
-	static UGameServiceConfig& CreateForWorld(UWorld& World, TFunction<void(UGameServiceConfig&)> ConfigExec);
+	static UGameServiceConfig& CreateForWorld(const UWorld& World, TFunction<void(UGameServiceConfig&)> ConfigExec);
 
 	/**
 	 * Creates a UGameServiceConfig instance for the next world that will start, automatically registering it with the @UGameServiceManager.
@@ -59,7 +59,7 @@ public:
 	static UGameServiceConfig& CreateForNextWorld(TFunction<void(UGameServiceConfig&)> ConfigExec);
 
 	/** Automatically registers the config instance with the @UGameServiceManager. Already called when using @CreateForWorld(). */
-	void RegisterWithGameServiceManager() const;
+	void RegisterWithGameServiceManager(const UWorld& World) const;
 
 	/** Checks the configured dependencies of each configured service, and asserts for each service that is configured as dependency, but is missing from this config. */
 	void ValidateDependenciesForConfiguredServices() const;

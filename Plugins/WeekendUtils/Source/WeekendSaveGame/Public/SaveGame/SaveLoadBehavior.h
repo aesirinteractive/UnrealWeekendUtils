@@ -19,7 +19,7 @@ class USaveGameSerializer;
 class USaveGameService;
 struct FCurrentSaveGame;
 
-WEEKENDSAVEGAME_API DECLARE_LOG_CATEGORY_EXTERN(LogSaveLoadBehavior, Log, All);
+WEEKENDSAVEGAME_API DECLARE_LOG_CATEGORY_EXTERN(LogSaveLoadBehavior, Verbose, All);
 
 ///////////////////////////////////////////////////////////////////////////////////////
 
@@ -59,6 +59,9 @@ public:
 	virtual void HandleLevelChanged(USaveGameService& SaveGameService, UWorld* World) {}
 
 	virtual FSlotName GetAutosaveSlotName(const FCurrentSaveGame& CurrentSaveGame) const { return "Autosave"; }
+
+	/** @returns whether the current SaveGame can be continued (loaded). */
+	virtual bool CanContinueCurrentSaveGame(const FCurrentSaveGame& CurrentSaveGame) const;
 
 	virtual TSet<FSlotName> GetSaveSlotNamesAllowedForSaving(const FCurrentSaveGame& CurrentSaveGame) const PURE_VIRTUAL(GetSaveSlotNamesAllowedForSaving, return {};);
 	virtual TSet<FSlotName> GetSaveSlotNamesAllowedForLoading(const FCurrentSaveGame& CurrentSaveGame) const PURE_VIRTUAL(GetSaveSlotNamesAllowedForLoading, return {};);

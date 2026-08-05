@@ -18,11 +18,13 @@
 #include "Factories/DataAssetFactory.h"
 #include "Framework/Application/SlateApplication.h"
 #include "GameService/GameServiceLocator.h"
+#include "Math/UnitConversion.h"
 #include "Misc/FileHelper.h"
 #include "Misc/MessageDialog.h"
 #include "SaveGame/ModularSaveGame.h"
 #include "SaveGame/SaveGamePreset.h"
 #include "SaveGame/SaveGameService.h"
+#include "SaveGame/SaveGameUtils.h"
 #include "SaveGame/Settings/SaveGameServiceSettings.h"
 #include "Subsystems/AssetEditorSubsystem.h"
 
@@ -33,6 +35,9 @@ namespace
 
 void USaveGameEditor::OpenSaveGameEditor(const USaveGame* SaveGame)
 {
+	if (!GEditor)
+		return;
+
 	if (!ShownInstance.IsValid())
 	{
 		// (i) Need to be kept alive or the editor crashes on GC.
@@ -47,8 +52,12 @@ void USaveGameEditor::OpenSaveGameEditor(const USaveGame* SaveGame)
 
 void USaveGameEditor::OpenSaveGameEditorForCurrentSaveGame()
 {
+	const FWorldContext* WorldContext = GEngine->GetWorldContextFromPIEInstance(0);
+	if (!WorldContext)
+		return;
+
 	const USaveGame* SaveGame = nullptr;
-	if (const USaveGameService* SaveGameService = UGameServiceLocator::FindService<USaveGameService>())
+	if (const USaveGameService* SaveGameService = UGameServiceLocator::FindService<USaveGameService>(WorldContext->World()))
 	{
 		const FCurrentSaveGame& CurrentSaveGame = SaveGameService->GetCurrentSaveGame();
 		SaveGame = CurrentSaveGame.GetPtr();
@@ -84,7 +93,11 @@ void USaveGameEditor::ConvertToPreset()
 
 void USaveGameEditor::EditCurrentSaveGame()
 {
-	if (const USaveGameService* SaveGameService = UGameServiceLocator::FindService<USaveGameService>())
+	const FWorldContext* WorldContext = GEngine->GetWorldContextFromPIEInstance(0);
+	if (!WorldContext)
+		return;
+
+	if (const USaveGameService* SaveGameService = UGameServiceLocator::FindService<USaveGameService>(WorldContext->World()))
 	{
 		const FCurrentSaveGame& CurrentSaveGame = SaveGameService->GetCurrentSaveGame();
 		SetSaveGame(CurrentSaveGame.GetPtr(), FString("(Current SaveGame)"));
@@ -138,6 +151,24 @@ void USaveGameEditor::EditSaveGameFromFile()
 	Cast<UGameServiceBase>(SaveGameService)->ShutdownService();
 }
 
+void USaveGameEditor::AnalyzeSaveGameComposition()
+{
+	if (!SaveGame)
+	{
+		FMessageDialog::Open(EAppMsgCategory::Error, EAppMsgType::Ok, INVTEXT("No SaveGame loaded to this editor that can be analyzed!"));
+		return;
+	}
+
+	const UModularSaveGame* ModularSaveGame = Cast<UModularSaveGame>(SaveGame.Get());
+	if (!ModularSaveGame)
+	{
+		FMessageDialog::Open(EAppMsgCategory::Error, EAppMsgType::Ok, INVTEXT("Only ModularSaveGame classes are supported for this operation!"));
+		return;
+	}
+
+	ModularSaveGame->AnalyzeAndReportSaveGameComposition();
+}
+
 void USaveGameEditor::SetSaveGame(const USaveGame* InSaveGame, TOptional<FString> OptionalInfo)
 {
 	SaveGame = InSaveGame;
@@ -162,6 +193,7 @@ void USaveGameEditor::OpenSaveGameEditorForCurrentSaveGame() { unimplemented(); 
 void USaveGameEditor::ConvertToPreset() { unimplemented(); }
 void USaveGameEditor::EditCurrentSaveGame() { unimplemented(); }
 void USaveGameEditor::EditSaveGameFromFile() { unimplemented(); }
+void USaveGameEditor::AnalyzeSaveGameComposition() { unimplemented(); }
 void USaveGameEditor::SetSaveGame(const USaveGame* InSaveGame, TOptional<FString> OptionalInfo) { unimplemented(); }
 
 #endif

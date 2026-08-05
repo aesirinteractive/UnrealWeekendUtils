@@ -38,10 +38,10 @@ public:
 	/// MODULES
 
 	/** @returns the CurrentSaveGame of the @USaveGameService as ModularSaveGame - or nullptr. */
-	static const UModularSaveGame* GetCurrent();
+	static const UModularSaveGame* FindCurrent(const UObject* WorldContext);
 
 	/** @returns the CurrentSaveGame of the @USaveGameService as ModularSaveGame - or nullptr. */
-	static UModularSaveGame* GetMutableCurrent();
+	static UModularSaveGame* FindMutableCurrent(const UObject* WorldContext);
 
 	/**
 	 * @returns requested module instance for the summoner, either from the current ModularSaveGame
@@ -76,6 +76,9 @@ public:
 
 	bool DeleteModule(const FName& ModuleName) { return (Modules.Remove(ModuleName) > 0); }
 
+	void ForEachModule(const TFunction<void(const FName&, USaveGameModule&)>& Function);
+	void ForEachModule(const TFunction<void(const FName&, const USaveGameModule&)>& Function) const;
+
 	///////////////////////////////////////////////////////////////////////////////////////
 	/// HEADER
 
@@ -98,6 +101,13 @@ public:
 	void SetInstancedHeaderData(const FInstancedStruct& HeaderData) { InstancedHeaderData = MakeShared<FInstancedStruct>(HeaderData); }
 
 	///////////////////////////////////////////////////////////////////////////////////////
+	/// UTILS
+
+#if WITH_EDITOR
+	/** Analyzes the composition of this ModularSaveGame and reports it to the MessageLog. */
+	virtual void AnalyzeAndReportSaveGameComposition() const;
+#endif
+
 protected:
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
@@ -134,7 +144,7 @@ template <typename T>
 T& UModularSaveGame::SummonModule(UObject& Summoner, const TSubclassOf<T>& ModuleClass)
 {
 	static_assert(TIsDerivedFrom<T, USaveGameModule>::IsDerived, "Type is not derived from USaveGameModule.");
-	UModularSaveGame* SaveGame = GetMutableCurrent();
+	UModularSaveGame* SaveGame = FindMutableCurrent(&Summoner);
 	return (IsValid(SaveGame) ? SaveGame->FindOrAddModule<T>(ModuleClass) : *NewObject<T>(&Summoner, ModuleClass));
 }
 
@@ -142,8 +152,8 @@ template <typename T>
 T& UModularSaveGame::SummonModule(UObject& Summoner, const FName& ModuleName, const TSubclassOf<T>& ModuleClass)
 {
 	static_assert(TIsDerivedFrom<T, USaveGameModule>::IsDerived, "Type is not derived from USaveGameModule.");
-	UModularSaveGame* SaveGame = GetMutableCurrent();
-	return (IsValid(SaveGame) ? SaveGame->FindOrAddModule<T>(ModuleClass, ModuleName) : *NewObject<T>(&Summoner, ModuleClass));
+	UModularSaveGame* SaveGame = FindMutableCurrent(&Summoner);
+	return (IsValid(SaveGame) ? SaveGame->FindOrAddModule<T>(ModuleName, ModuleClass) : *NewObject<T>(&Summoner, ModuleClass));
 }
 
 template <typename T>
@@ -166,6 +176,8 @@ T& UModularSaveGame::FindOrAddModule(const FName& ModuleName, const TSubclassOf<
 
 	T* NewModule = NewObject<T>(this, ModuleClass);
 	Modules.Add(ModuleName, NewModule);
+	checkf(ModuleName != NAME_None, TEXT("Tried to add module %s with unset name. ModuleName must not be empty or unset!."),
+		*ModuleClass->GetName());
 	return *NewModule;
 }
 
@@ -183,6 +195,12 @@ T* UModularSaveGame::FindModule(const FName& ModuleName, const TSubclassOf<T>& M
 	static_assert(TIsDerivedFrom<T, USaveGameModule>::IsDerived, "Type is not derived from USaveGameModule.");
 	const FName& FindModuleName = (ModuleName.IsNone() ? GetDefault<T>(ModuleClass)->DefaultModuleName : ModuleName);
 	auto* FoundModule = Modules.Find(FindModuleName);
+	if (FoundModule)
+	{
+		ensureAlwaysMsgf(FoundModule->GetClass() == ModuleClass, 
+			TEXT("Tried finding Module of Class %s with Name %s, but instead found module of class %s with name %s."), 
+			*ModuleClass.Get()->GetName(), *ModuleName.ToString(), *FoundModule->GetClass()->GetName(), *FindModuleName.ToString());
+	}
 	return ((FoundModule && FoundModule->GetClass() == ModuleClass) ? Cast<T>(FoundModule->Get()) : nullptr);
 }
 

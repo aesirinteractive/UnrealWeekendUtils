@@ -20,6 +20,8 @@ FWeekendUtilsSubobjectProxyArchive::FWeekendUtilsSubobjectProxyArchive(FArchive&
 	FObjectAndNameAsStringProxyArchive(InInnerArchive, bInLoadIfFindFails), SubobjectOwner(InSubobjectOwner)
 {
 	ArIsSaveGame = true;
+	ArNoDelta = true;
+	ArNoIntraPropertyDelta = true;
 }
 
 FArchive& FWeekendUtilsSubobjectProxyArchive::operator<<(UObject*& Obj)
@@ -34,7 +36,7 @@ FArchive& FWeekendUtilsSubobjectProxyArchive::operator<<(UObject*& Obj)
 		if (IsSubObjectOfOwner != "1")
 		{
 			// Find/load objects from the asset registry (= asset pointers):
-			Obj = FindObject<UObject>(nullptr, *ObjectPath);
+			Obj = FindObject<UObject>(nullptr, *ObjectPath, EFindObjectFlags::None);
 			if (!Obj && bLoadIfFindFails)
 			{
 				Obj = LoadObject<UObject>(nullptr, *ObjectPath);
@@ -159,9 +161,15 @@ void USaveGameSerializer::AsyncLoadGameFromSlot(const FSlotName& SlotName, const
 	{
 		const FPlatformUserId PlatformUserId = FPlatformMisc::GetPlatformUserForUserIndex(UserIndex);
 		SaveSystem->LoadGameAsync(false, *SlotName, PlatformUserId,
-			[this, Callback, UserIndex](const FString& ResultSlotName, FPlatformUserId, bool bSuccess, const TArray<uint8>& Data)
+			[WeakThis = MakeWeakObjectPtr(this), this, Callback, UserIndex](const FString& ResultSlotName, FPlatformUserId, bool bSuccess, const TArray<uint8>& Data)
 			{
 				check(IsInGameThread());
+
+				if (!WeakThis.IsValid())
+				{
+					Callback.ExecuteIfBound(ResultSlotName, UserIndex, nullptr);
+					return;
+				}
 
 				USaveGame* LoadedGame = nullptr;
 				if (bSuccess)
