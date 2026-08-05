@@ -10,6 +10,8 @@ Unreal Engine 5 plugin collecting reusable gameplay-framework modules: a game se
 - [Repos that use WeekendUtils](#repos-that-use-weekendutils)
 - [Update notes](#update-notes-05082026)
 
+---
+
 ### Modules
 - `WeekendUtils` - shared utility code
 - `WeekendGameService` - game service framework
