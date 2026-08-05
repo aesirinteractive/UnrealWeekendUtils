@@ -24,19 +24,18 @@ bool UWorldGameServiceRunner::DoesSupportWorldType(const EWorldType::Type WorldT
 {
 	switch (WorldType)
 	{
-	// Only create in game worlds:
-	case EWorldType::Game:
-	case EWorldType::PIE:
-		return true;
+		// Only create in game worlds:
+		case EWorldType::Game:
+		case EWorldType::PIE:
+			return true;
 
-	case EWorldType::None:
-	case EWorldType::Editor:
-	case EWorldType::EditorPreview:
-	case EWorldType::GamePreview:
-	case EWorldType::GameRPC:
-	case EWorldType::Inactive:
-	default:
-		return false;
+		case EWorldType::None:
+		case EWorldType::Editor:
+		case EWorldType::EditorPreview:
+		case EWorldType::GamePreview:
+		case EWorldType::GameRPC:
+		case EWorldType::Inactive:
+		default: return false;
 	}
 }
 
@@ -52,13 +51,6 @@ void UWorldGameServiceRunner::Initialize(FSubsystemCollectionBase& Collection)
 	DECLARE_SCOPE_CYCLE_COUNTER(TEXT("UWorldGameServiceRunner.Initialize"), STAT_WorldGameServiceRunner_Initialize, STATGROUP_GameService);
 
 	Super::Initialize(Collection);
-
-	// #Asr-Engine Mod GLAZE-1184 - Allow Angelscript Tests to Late initialize the runner when the GameInstance is available on the World
-	if (GetWorld()->GetGameInstance() == nullptr)
-		return;
-
-	bIsInitialized = true;
-	// --
 
 	RegisterAutoServiceConfigs();
 
@@ -120,22 +112,6 @@ void UWorldGameServiceRunner::SetServiceConfigForNextWorld(UGameServiceConfig& S
 	Internal::GConfigInstanceForNextWorld = TStrongObjectPtr(&ServiceConfig);
 	UE_LOG(LogGameService, Log, TEXT("Setting %s as GameServiceConfig for the next world to start."), *ServiceConfig.GetName());
 }
-
-// #Asr-Engine Mod GLAZE-1184 - Allow Angelscript Tests to Late initialize the runner when the GameInstance is available on the World
-void UWorldGameServiceRunner::LateInitialize()
-{
-	if (bIsInitialized)
-		return;
-
-	RegisterAutoServiceConfigs();
-
-	// (i) Don't automatically start services in tests, they will be started on-demand.
-	if (!GIsAutomationTesting)
-	{
-		StartRegisteredServices();
-	}
-}
-// --
 
 void UWorldGameServiceRunner::RegisterAutoServiceConfigs()
 {
