@@ -3,11 +3,11 @@
 	"Version": 1,
 	"VersionName": "1.0",
 	"FriendlyName": "Weekend Utilities",
-	"Description": "Shared utilities and stuff.",
-	"Category": "Utility",
+	"Description": "This plugin contains utilities including a savegame framework, a micro service framework, a cheat menu and more.\nhttps://github.com/barzb/UnrealWeekendUtils",
+	"Category": "Odin",
 	"CreatedBy": "Benjamin Barz",
 	"CreatedByURL": "https://github.com/barzb/UnrealWeekendUtils",
-	"DocsURL": "https://github.com/barzb/UnrealWeekendUtils",
+	"DocsURL": "https://aesir-interactive.atlassian.net/wiki/x/VQF1awE",
 	"MarketplaceURL": "",
 	"SupportURL": "https://github.com/barzb/UnrealWeekendUtils",
 	"CanContainContent": true,
@@ -15,6 +15,12 @@
 	"IsExperimentalVersion": false,
 	"Installed": true,
 	"EnabledByDefault": false,
+	"EditorCustomVirtualPath": "Odin/External",
+	"TreatEditorCustomVirtualPathAsRoot": true,
+	"Maintainers": [
+		"Philipp Brasin",
+		"Benjamin Barz"
+	],
 	"Modules": [
 		{
 			"Name": "WeekendUtils",

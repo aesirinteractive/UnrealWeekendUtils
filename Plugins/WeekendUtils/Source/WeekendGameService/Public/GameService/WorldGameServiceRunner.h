@@ -43,12 +43,18 @@ public:
 	virtual void Deinitialize() override;
 	// --
 
+
 	/** Sets a specific @UGameServiceConfig instance to be used when the next world is starting. */
 	static void SetServiceConfigForNextWorld(UGameServiceConfig& ServiceConfig);
 
+	void WEEKENDGAMESERVICE_API LateInitialize();
 private:
 	void RegisterAutoServiceConfigs();
 	void StartRegisteredServices();
 	void TickRunningServices(float DeltaTime);
 	TArray<TSubclassOf<UWorldSubsystem>> GatherWorldSubsystemDependencies() const;
+
+	// #Asr-Engine Mod GLAZE-1184 - Allow Angelscript Tests to Late initialize the runner when the GameInstance is available on the World
+	bool bIsInitialized = false;
+	// --
 };
