@@ -208,11 +208,16 @@ public:
 	virtual bool IsBusySaving() const;
 	virtual bool IsBusySavingOrLoading() const;
 
+	virtual bool CanContinueCurrentSaveGame() const;
+
 	virtual FSlotName GetAutosaveSlotName() const;
 	virtual TOptional<FSlotName> GetMostRecentlySavedSlotName() const;
 	virtual bool DoesSaveFileExist(const FSlotName& SlotName) const;
 	virtual TSet<FSlotName> GetSlotNamesAllowedForSaving() const;
 	virtual TSet<FSlotName> GetSlotNamesAllowedForLoading() const;
+
+	/** Logs a debug string for given owner object to the debug history (saved to ModularSaveGame). */
+	void AddDebugEntry(const UObject& Owner, const FString& Entry);
 
 	///////////////////////////////////////////////////////////////////////////////////////
 	/// CACHE

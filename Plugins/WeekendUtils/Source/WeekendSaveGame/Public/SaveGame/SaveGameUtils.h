@@ -11,6 +11,7 @@
 
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
+#include "Math/UnitConversion.h"
 
 #include "SaveGameUtils.generated.h"
 
@@ -49,4 +50,7 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Weekend Utils|Save Game")
 	static TArray<FSoftClassPath> GetAllAvailableSaveLoadBehaviorClasses();
+
+	/** Serializes the object like a SaveGame and calculates the resulting archive size in the desired unit. */
+	static int64 CalculateObjectSizeForSaveGame(const UObject& Object, EUnit DesiredUnit = EUnit::Bytes);
 };

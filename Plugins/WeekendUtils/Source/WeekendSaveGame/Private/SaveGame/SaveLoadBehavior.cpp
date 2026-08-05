@@ -67,6 +67,11 @@ void USaveLoadBehavior::HandleAfterSaveGameRestored(const FCurrentSaveGame& Save
 	}
 }
 
+bool USaveLoadBehavior::CanContinueCurrentSaveGame(const FCurrentSaveGame& CurrentSaveGame) const
+{
+	return (CurrentSaveGame.IsValid() && !CurrentSaveGame.IsNewGame());
+}
+
 USaveGame& USaveLoadBehavior::CreateNewSavegameObject(USaveGameService& SaveGameService) const
 {
 	UModularSaveGame* ModularSaveGame = NewObject<UModularSaveGame>(&SaveGameService);
@@ -166,7 +171,7 @@ void UDefaultSaveLoadBehavior::HandlePreloadCompleted(USaveGameService& SaveGame
 	TOptional<TPair<FSlotName, USaveGame*>> MostRecentSaveGame = {};
 	for (int32 i = 0; i < PreloadedSaveGames.Num(); ++i)
 	{
-		if (!PreloadedSaveGames[i])
+		if (!IsValid(PreloadedSaveGames[i]))
 			continue;
 
 		TOptional<FDateTime> TimeOfLastSave = FindTimeOfLastSaveFromSaveGame(*PreloadedSaveGames[i]);
