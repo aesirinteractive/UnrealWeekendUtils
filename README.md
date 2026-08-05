@@ -1,8 +1,8 @@
 ## WeekendUtils
 
 **Relevant documentation can be found here:**
-- [Game Service Framework](https://github.com/barzb/UnrealWeekendUtils/wiki/Game-Service-Framework)
-- [Save Game Framework](https://github.com/barzb/UnrealWeekendUtils/wiki/Save-Game-Framework)
+- [Game Service Framework](https://github.com/barzb/WeekendUtils/wiki/Game-Service-Framework)
+- [Save Game Framework](https://github.com/barzb/WeekendUtils/wiki/Save-Game-Framework)
 
 ### **Update notes: 05/08/2026**
 **Breaking Changes to the GameService framework!**
