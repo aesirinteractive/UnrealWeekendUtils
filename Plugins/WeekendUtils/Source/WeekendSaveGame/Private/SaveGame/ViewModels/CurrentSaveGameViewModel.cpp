@@ -66,7 +66,7 @@ void UCurrentSaveGameViewModel::BeginDestroy()
 
 void UCurrentSaveGameViewModel::UpdateForCurrentSaveGame(const FCurrentSaveGame& CurrentSaveGame)
 {
-	UE_MVVM_SET_PROPERTY_VALUE(bCanContinue, (CurrentSaveGame.IsValid() && !CurrentSaveGame.IsNewGame()));
+	UE_MVVM_SET_PROPERTY_VALUE(bCanContinue, SaveGameService->CanContinueCurrentSaveGame());
 	UpdateTimeSinceLastSave();
 }
 

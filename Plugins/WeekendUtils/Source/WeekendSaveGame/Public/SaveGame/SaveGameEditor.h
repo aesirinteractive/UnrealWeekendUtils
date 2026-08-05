@@ -51,6 +51,9 @@ protected:
 	UFUNCTION(CallInEditor, Category = "Editor", meta = (DevelopmentOnly), DisplayName = "Edit SaveGame File")
 	virtual void EditSaveGameFromFile();
 
+	UFUNCTION(CallInEditor, Category = "Editor", meta = (DevelopmentOnly), DisplayName = "Analyze SaveGame")
+	virtual void AnalyzeSaveGameComposition();
+
 	virtual void SetSaveGame(const USaveGame* InSaveGame, TOptional<FString> OptionalInfo = {});
 
 #if WITH_EDITORONLY_DATA

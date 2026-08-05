@@ -10,9 +10,12 @@
 #include "SaveGame/ModularSaveGame.h"
 
 #include "GameService/GameServiceLocator.h"
+#include "Logging/MessageLog.h"
 #include "Misc/EngineVersion.h"
+#include "Misc/UObjectToken.h"
 #include "SaveGame/SaveGameHeader.h"
 #include "SaveGame/SaveGameService.h"
+#include "SaveGame/SaveGameUtils.h"
 #include "Serialization/CustomVersion.h"
 #include "Serialization/MemoryReader.h"
 #include "Serialization/MemoryWriter.h"
@@ -136,7 +139,74 @@ bool FModularSaveGameHeader::TryWrite(FMemoryWriter& MemoryWriter)
 	return true;
 }
 
+void UModularSaveGame::ForEachModule(const TFunction<void(const FName&, USaveGameModule&)>& Function)
+{
+	for (const TPair<FName, TObjectPtr<USaveGameModule>>& Itr : Modules)
+	{
+		if (Itr.Value)
+		{
+			Function(Itr.Key, *Itr.Value);
+		}
+	}
+}
+
+void UModularSaveGame::ForEachModule(const TFunction<void(const FName&, const USaveGameModule&)>& Function) const
+{
+	for (const TPair<FName, TObjectPtr<USaveGameModule>>& Itr : Modules)
+	{
+		if (Itr.Value)
+		{
+			Function(Itr.Key, *Itr.Value);
+		}
+	}
+}
+
 #if WITH_EDITOR
+void UModularSaveGame::AnalyzeAndReportSaveGameComposition() const
+{
+	const int64 TotalSize = USaveGameUtils::CalculateObjectSizeForSaveGame(*this, EUnit::Bytes);
+	const int64 TotalSizeKb = FUnitConversion::Convert(TotalSize, EUnit::Bytes, EUnit::Kilobytes);
+
+	FMessageLog MessageLog("AssetCheck");
+	MessageLog.NewPage(FText::FromString(GetName()));
+	MessageLog.Info()
+		->AddToken(FTextToken::Create(FText::FromString("Analysis for"))) 
+		->AddToken(FUObjectToken::Create(this));
+
+	TMap<int64, FString> SortedAnalysisEntries;
+	ForEachModule([this, &SortedAnalysisEntries, TotalSize](const FName& ModuleName, const USaveGameModule& Module)
+	{
+		const int64 ModuleSize = USaveGameUtils::CalculateObjectSizeForSaveGame(Module, EUnit::Bytes);
+		const int64 ModuleSizeKb = FUnitConversion::Convert(ModuleSize, EUnit::Bytes, EUnit::Kilobytes);
+		const double Pct = 100.0 * StaticCast<double>(ModuleSize) / StaticCast<double>(TotalSize);
+
+		int64 SortIndex = ModuleSize;
+		while (SortedAnalysisEntries.Contains(SortIndex))
+		{
+			++SortIndex; // TMap needs unique keys, this handles same-sized entries in a good-enough way.
+		}
+
+		const FString PctString = Pct < 0.01 ? FString("<0.01%") :  FString::Printf(TEXT("%05.2f%%"), Pct);
+		const FString SizeString = ModuleSize < 10000 ? FString::Printf(TEXT("%lld bytes"), ModuleSize) : FString::Printf(TEXT("%lld KB"), ModuleSizeKb);
+		SortedAnalysisEntries.Add(SortIndex, FString::Printf(TEXT("- [%s] Module: %s (~%s)"), *PctString, *ModuleName.ToString(), *SizeString));
+	});
+	SortedAnalysisEntries.KeySort(TGreater<int64>());
+
+	for (const TPair<int64, FString>& Itr : SortedAnalysisEntries)
+	{
+		MessageLog.Info()->AddToken(FTextToken::Create(FText::FromString(Itr.Value))); 
+	}
+	MessageLog.Info()->AddToken(FTextToken::Create(FText::FromString(FString::Printf(TEXT("=> Total: %lld bytes (%lld KB)"), TotalSize, TotalSizeKb)))); 
+
+	MessageLog.Info()->AddToken(FTextToken::Create(FText::FromString("==================================="))); 
+	ForEachModule([this, &MessageLog](const FName&, const USaveGameModule& Module)
+	{
+		Module.AnalyzeAndReportModuleComposition(MessageLog);
+	});
+
+	MessageLog.Notify(FText::FromString("SaveGame analysis is now available"), EMessageSeverity::Info, true);
+}
+
 void UModularSaveGame::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
 	if (PropertyChangedEvent.GetPropertyName() == GET_MEMBER_NAME_CHECKED(ThisClass, Modules))
@@ -162,6 +232,8 @@ bool UModularSaveGameSerializer::TrySerializeSaveGame(USaveGame& InSaveGameObjec
 	const UModularSaveGame* ModularSaveGame = Cast<UModularSaveGame>(&InSaveGameObject);
 	FMemoryWriter MemoryWriter(OutSaveData, true);
 	MemoryWriter.ArIsSaveGame = true;
+	MemoryWriter.ArNoDelta = true;
+	MemoryWriter.ArNoIntraPropertyDelta = true;
 
 	// Serialize header data:
 	const FInstancedStruct CustomHeaderData = (ModularSaveGame && ModularSaveGame->GetInstancedHeaderData().IsValid())

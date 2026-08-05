@@ -28,6 +28,18 @@ public:
 
 	UPROPERTY(SaveGame)
 	TArray<uint8> ByteData = {};
+
+	UPROPERTY(SaveGame)
+	bool bUsesCustomUniqueObjectId = false;
+};
+
+/** Behavior in case of ObjectId conflicts when upgrading a saved state to a new module version. */
+UENUM()
+enum class ELevelObjectRestorerConflictResolutionPolicy : uint8
+{
+	KeepExistingDiscardConflicting,
+	DiscardExistingKeepConflicting,
+	DoNotResolveKeepBoth
 };
 
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -38,16 +50,28 @@ public:
  * Runtime spawned objects (like GameMode, GameState, ...) MUST provide a CustomUniqueObjectId to make them identifiable.
  * @requires UModularSaveGame
  */
-UCLASS(DisplayName = "Level Objects")
+UCLASS(DisplayName = "Level Objects", Config = "Game", DefaultConfig)
 class WEEKENDSAVEGAME_API ULevelObjectRestorer : public USaveGameModule
 {
 	GENERATED_BODY()
 
 public:
+	/** See @UpgradeSaveGameModule. */
+	enum EModuleVersion : int32
+	{
+		ModuleVersion_Initial = 0,
+		ModuleVersion_WithSafeUniqueObjectId = 1,
+		ModuleVersion_WithSafeUniqueObjectId_Hotfix = 2,
+
+		// ----------- Do NOT touch hardcoded versions below! -----------
+		ModuleVersion_LastPlusOne, // Automatically set to one higher than the last custom entry.
+		ModuleVersion_Current = ModuleVersion_LastPlusOne - 1 // Automatically set to the last custom entry.
+	};
+
 	ULevelObjectRestorer()
 	{
 		DefaultModuleName = "LevelObjectRestorer";
-		ModuleVersion = 0;
+		ModuleVersion = ModuleVersion_Current;
 	}
 
 	/**
@@ -69,11 +93,22 @@ public:
 	void UnregisterLevelObjectWithTransform(AActor& Actor, TOptional<FString> CustomUniqueObjectId = {}, bool bKeepObjectState = true);
 	void UnregisterLevelObjectWithTransform(USceneComponent& SceneComponent, TOptional<FString> CustomUniqueObjectId = {}, bool bKeepObjectState = true);
 
-	// - UObject
+	/** Constructs a unique object id for given object based on the objects PathName, with some adjustments to the world-path prefix. */
+	static FString MakeSafeUniqueObjectId(const UObject& Object);
+
+	// - USaveGameModule
 	virtual void Serialize(FArchive& Ar) override;
+	virtual void BeginDestroy() override;
+#if WITH_EDITOR
+	virtual void AnalyzeAndReportModuleComposition(FMessageLog& MessageLog) const override;
+#endif
 	// --
 
 protected:
+	/** Conflict resolution behavior when upgrading the SaveGameModule to a newer version. */
+	UPROPERTY(Transient, Config, EditDefaultsOnly, Category = "Weekend Utils|Save Game")
+	ELevelObjectRestorerConflictResolutionPolicy ConflictResolutionPolicy = ELevelObjectRestorerConflictResolutionPolicy::KeepExistingDiscardConflicting;
+
 	UPROPERTY(Transient, VisibleAnywhere, meta = (DisplayThumbnail = "false"), Category = "Weekend Utils|Save Game")
 	TSet<TWeakObjectPtr<UObject>> SimpleRegisteredObjects = {};
 	UPROPERTY(Transient, VisibleAnywhere, meta = (DisplayThumbnail = "false"), Category = "Weekend Utils|Save Game")
@@ -89,4 +124,14 @@ protected:
 
 	virtual FTransform GetObjectTransform(UObject& Object) const;
 	virtual void SetObjectTransform(UObject& Object, const FTransform& Transform) const;
+
+	virtual void UpgradeSaveGameModule();
+
+private:
+	/** Debugging option to log which (restored) object states were not claimed on this module. */
+	UPROPERTY(Config)
+	bool bReportUnclaimedObjectStatesOnDestruction = false;
+	TSet<FString> ClaimedUniqueObjectIds = {};
+
+	void ReportUnclaimedObjectStates() const;
 };

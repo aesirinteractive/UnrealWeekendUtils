@@ -92,8 +92,7 @@ inline void UGameServiceBase::CheckGameServiceDependencies() const
 {
 	if (Lifetime == EGameServiceLifetime::ShutdownWithWorld)
 		return; // World services can have dependencies to anything since they die first.
-
-	for (const TSubclassOf<UObject> DependencyClass : ConfigureGameServiceUser().ServiceDependencies)
+	for (const TSubclassOf<UObject>& DependencyClass : ConfigureGameServiceUser().ServiceDependencies)
 	{
 		const UGameServiceBase* ServiceDependency = DependencyClass->GetDefaultObject<UGameServiceBase>();
 		if (!ServiceDependency)

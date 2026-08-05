@@ -38,7 +38,8 @@ public class WeekendUtils : ModuleRules
 				"GameplayTasks",
 				"InputCore",
 				"Projects",
-				"Slate", "SlateCore",
+				"Slate",
+				"SlateCore",
 				"UMG",
 			}
 		);

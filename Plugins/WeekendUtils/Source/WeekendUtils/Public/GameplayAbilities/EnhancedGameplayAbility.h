@@ -22,6 +22,12 @@ class WEEKENDUTILS_API UEnhancedGameplayAbility : public UGameplayAbility
 {
 	GENERATED_BODY()
 
+public:
+	// - UGameplayAbility
+	virtual void InputPressed(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo) override;
+	virtual void InputReleased(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo) override;
+	// --
+
 protected:
 	/** Enables blueprint (enhanced) input bindings to trigger inside of the ability graph. Instanced abilities only. */
 	UFUNCTION(BlueprintCallable, Category = "Weekend Utils|Abilities")
@@ -30,4 +36,12 @@ protected:
 	/** Disables blueprint (enhanced) input bindings to trigger inside of the ability graph. Instanced abilities only. */
 	UFUNCTION(BlueprintCallable, Category = "Weekend Utils|Abilities")
 	virtual void UnbindFromInputComponent(UInputComponent* InputComponent = nullptr);
+
+	/** Called when the input that triggered this ability is pressed. */
+	UFUNCTION(BlueprintNativeEvent)
+	void HandleInputPressed(const FGameplayAbilityActorInfo& ActorInfo, const FGameplayAbilityActivationInfo& ActivationInfo);
+
+	/** Called when the input that triggered this ability is released. */
+	UFUNCTION(BlueprintNativeEvent)
+	void HandleInputReleased(const FGameplayAbilityActorInfo& ActorInfo, const FGameplayAbilityActivationInfo& ActivationInfo);
 };
