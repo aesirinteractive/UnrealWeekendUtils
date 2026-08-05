@@ -4,7 +4,7 @@
 - [Game Service Framework](https://github.com/barzb/UnrealWeekendUtils/wiki/Game-Service-Framework)
 - [Save Game Framework](https://github.com/barzb/UnrealWeekendUtils/wiki/Save-Game-Framework)
 
-### **Update notes: December 2025**
+### **Update notes: 05/08/2026**
 **Breaking Changes to the GameService framework!**
 - ```UGameServiceManager``` is not a ```UEngineSubsystem``` anymore!
   - Instead, it is now tied to a ```UGameInstance```, so local service environments in multiplayer PIE sessions are supported. This is in preparation for a bigger multiplayer support of the framework (TBD).
