@@ -709,6 +709,14 @@ bool USaveGameService::HasAnyCachedSaveGameSnapshot() const
 	return GetAllCachedSaveGameSnapshots().Num() > 0;
 }
 
+// - #AesirMod ODIN-406
+void USaveGameService::UpdateCachedSaveGame(const FSlotName& SlotName, const USaveGame& SaveGameObject)
+{
+	CachedSaveGames.CopyToCache(*this, SlotName, SaveGameObject);
+	OnAvailableSaveGamesChanged.Broadcast();
+}
+// -- #AesirMod ODIN-406
+
 bool USaveGameService::DoesSaveFileExist(const FSlotName& SlotName) const
 {
 	return (SaveGameSerializer && SaveGameSerializer->DoesSaveGameExist(SlotName, GetCurrentUserIndex()));

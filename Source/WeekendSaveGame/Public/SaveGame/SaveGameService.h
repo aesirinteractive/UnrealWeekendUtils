@@ -227,6 +227,15 @@ public:
 	bool IsCachedSaveGameSnapshot(const USaveGame& SaveGameObject) const;
 	bool HasAnyCachedSaveGameSnapshot() const;
 
+// - #AesirMod ODIN-406
+	/**
+	 * Replaces the cached snapshot for a slot with a copy of the given save game and notifies
+	 * listeners. Use when a save is written to a slot outside the normal request pipeline (e.g. a
+	 * throttled/deferred autosave) so the in-memory cache stays coherent with what is on disk.
+	 */
+	void UpdateCachedSaveGame(const FSlotName& SlotName, const USaveGame& SaveGameObject);
+// -- #AesirMod ODIN-406
+
 protected:
 	///////////////////////////////////////////////////////////////////////////////////////
 	/// STATE
