@@ -765,11 +765,20 @@ TSharedRef<SWidget> SCheatMenu::ConstructArgumentInput(const ICheatMenuAction::F
 		}
 		case EArgumentStyle::DropdownText:
 		{
-			if (InOutValue->IsEmpty())
+// - #AesirMod ODIN-548 Searchable cheat menu dropdowns
+			// Copy all available options into a shared array so we have a stable base for filtering
+			TSharedPtr<TArray<TSharedPtr<FString>>> AllOptions = MakeShared<TArray<TSharedPtr<FString>>>();
+			if (const TArray<TSharedPtr<FString>>* SourceOptions = ArgumentInfo.OptionsSource.GetOptions(FindPlayWorld()))
 			{
-				const TArray<TSharedPtr<FString>>& Options = *ArgumentInfo.OptionsSource.GetOptions(FindPlayWorld());
-				*InOutValue = (Options.IsEmpty() ? *InOutValue : *Options[0]);
+				*AllOptions = *SourceOptions;
 			}
+			if (InOutValue->IsEmpty() && !AllOptions->IsEmpty())
+			{
+				*InOutValue = *(*AllOptions)[0];
+			}
+			// FilteredOptions is what the combobox reads from; we mutate it as the user types
+			TSharedPtr<TArray<TSharedPtr<FString>>> FilteredOptions = MakeShared<TArray<TSharedPtr<FString>>>(*AllOptions);
+// -- #AesirMod ODIN-548
 
 			const FGuid ComboboxId = FGuid::NewGuid();
 			return SAssignNew(CheatMenuComboBoxPointers.Add(ComboboxId), SComboBox<TSharedPtr<FString>>)
@@ -777,7 +786,9 @@ TSharedRef<SWidget> SCheatMenu::ConstructArgumentInput(const ICheatMenuAction::F
 			.EnableGamepadNavigationMode(true)
 			.CollapseMenuOnParentFocus(false)
 			.ToolTipText(FText::FromString(ArgumentInfo.Description))
-			.OptionsSource(ArgumentInfo.OptionsSource.GetOptions(FindPlayWorld()))
+// - #AesirMod ODIN-548 Searchable cheat menu dropdowns
+			.OptionsSource(FilteredOptions.Get())
+// -- #AesirMod ODIN-548
 			.Method(EPopupMethod::UseCurrentWindow)
 			.OnComboBoxOpening_Lambda([ComboboxId]()
 			{
@@ -789,13 +800,16 @@ TSharedRef<SWidget> SCheatMenu::ConstructArgumentInput(const ICheatMenuAction::F
 					ComboBox->Pin()->SetMenuContentWidgetToFocus(ComboBox->Pin());
 				}
 			})
-			.OnSelectionChanged_Lambda([InOutValue](TSharedPtr<FString> NewSelection, ESelectInfo::Type)
+// - #AesirMod ODIN-548 Searchable cheat menu dropdowns
+			.OnSelectionChanged_Lambda([InOutValue, AllOptions, FilteredOptions](TSharedPtr<FString> NewSelection, ESelectInfo::Type)
 			{
 				if (NewSelection.IsValid())
 				{
 					*InOutValue = *NewSelection;
+					*FilteredOptions = *AllOptions; // restore full list after a selection
 				}
 			})
+// -- #AesirMod ODIN-548
 			.OnGenerateWidget_Lambda([](TSharedPtr<FString> Option)
 			{
 				return SNew(STextBlock)
@@ -804,12 +818,39 @@ TSharedRef<SWidget> SCheatMenu::ConstructArgumentInput(const ICheatMenuAction::F
 				.MinDesiredWidth(MinDesiredWith * 3.f);
 			})
 			[
-				SNew(STextBlock)
+// - #AesirMod ODIN-548 Searchable cheat menu dropdowns
+				SNew(SEditableText)
+// -- #AesirMod ODIN-548
 				.Text_Lambda([InOutValue](){ return FText::FromString(*InOutValue); })
 				.Font(GetDefaultCheatMenuTextFont())
 				.Justification(ETextJustify::Right)
 				.MinDesiredWidth(MinDesiredWith * 3.f)
 				.OverflowPolicy(ETextOverflowPolicy::MiddleEllipsis)
+// - #AesirMod ODIN-548 Searchable cheat menu dropdowns
+				.OnTextChanged_Lambda([InOutValue, AllOptions, FilteredOptions, ComboboxId](const FText& NewText)
+				{
+					*InOutValue = NewText.ToString();
+					const FString& FilterStr = *InOutValue;
+					FilteredOptions->Empty();
+					for (const TSharedPtr<FString>& Option : *AllOptions)
+					{
+						if (FilterStr.IsEmpty() || Option->Contains(FilterStr))
+						{
+							FilteredOptions->Add(Option);
+						}
+					}
+					TWeakPtr<SComboBox<TSharedPtr<FString>>>* ComboBoxPtr = CheatMenuComboBoxPointers.Find(ComboboxId);
+					if (ComboBoxPtr && ComboBoxPtr->IsValid())
+					{
+						TSharedPtr<SComboBox<TSharedPtr<FString>>> PinnedComboBox = ComboBoxPtr->Pin();
+						PinnedComboBox->RefreshOptions();
+						if (!PinnedComboBox->IsOpen())
+						{
+							PinnedComboBox->SetIsOpen(true, false);
+						}
+					}
+				})
+// -- #AesirMod ODIN-548
 			];
 		}
 		default: case EArgumentStyle::Text:
